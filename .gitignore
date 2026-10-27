@@ -1,0 +1,36 @@
+# Local agent configuration and credentials
+/.agents/
+/.aws/
+/.codex/
+/auth.json
+/config.toml
+/installation_id
+/version.json
+/.sandbox_migration
+
+# Agent history, sessions, and runtime state
+/history.jsonl
+/session_index.jsonl
+/models_cache.json
+/sessions/
+/shell_snapshots/
+/app-server-control/
+/app-server-daemon/
+/thread-writer-locks/
+/tui-thread-reference-capabilities/
+/.sqlite-maintenance.lock
+/goals_*.sqlite*
+/logs_*.sqlite*
+/memories_*.sqlite*
+/queue_*.sqlite*
+/state_*.sqlite*
+/thread_history_*.sqlite*
+
+# Agent caches, downloaded tools, and temporary files
+/.tmp/
+/tmp/
+/cache/
+/packages/app-server-daemon/
+/plugins/.remote-plugin-install-staging/
+/plugins/cache/
+/skills/.system/

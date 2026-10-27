@@ -10,7 +10,7 @@ export const commands = {
   help: { label: 'CLI help', eyebrow: 'YOUR INSTALLED CLI', title: 'Straight from Spark.', description: 'Read the help output from your actual Spark installation.', action: 'Show help', topic: false },
 } as const;
 export type Command = keyof typeof commands;
-export interface Connection { name: string; server: string; username: string; password: string; secure: boolean; proto: string; type: string }
+export interface Connection { name: string; server: string; username: string; password: string; secure: boolean; proto: string; type: string; adminUrl?: string }
 export interface Option { flag: string; value: string }
 export interface RunRequest { command: Command; connection: Connection; topic: string; filter: string; topn: string; options: Option[]; helpCommand: string; confirmDelete?: boolean }
 export type State = 'starting' | 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';

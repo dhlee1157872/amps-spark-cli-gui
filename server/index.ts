@@ -5,6 +5,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Sessions } from './sessions.js';
 import { root, sparkLocation } from './commands.js';
+import { fetchTopicNames } from './topics.js';
 
 const app = express();
 const server = createHttpServer(app);
@@ -31,6 +32,10 @@ app.use('/api', (req, res, next) => {
   const provided = req.headers['x-spark-token'] || (req.method === 'GET' && req.query.token);
   if (provided !== token) return res.status(403).json({ error: 'Refresh this page to reconnect to the local backend.' });
   next();
+});
+app.post('/api/topics', async (req, res) => {
+  try { res.json({ topics: await fetchTopicNames(req.body?.adminUrl) }); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
 app.post('/api/sessions', async (req, res) => {
   try { res.status(201).json(await sessions.create(req.body)); }
@@ -77,6 +82,6 @@ if (process.argv[1].endsWith('.ts')) {
   app.get('/', (_req, res) => res.sendFile(path.join(root, 'dist', 'index.html')));
 }
 app.use((error: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => res.status(400).json({ error: error.message }));
-server.listen(port, '127.0.0.1', () => console.log(`\n  Spark Workbench  http://localhost:${port}\n  Every server operation runs through the Spark CLI.\n`));
+server.listen(port, '127.0.0.1', () => console.log(`\n  Spark Workbench  http://localhost:${port}\n  Commands use Spark CLI; optional topic discovery uses the AMPS admin endpoint.\n`));
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { sessions.shutdown(); server.close(); process.exit(0); });
 server.on('error', error => { console.error(error.message); sessions.shutdown(); process.exit(1); });

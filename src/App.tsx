@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowDown, ArrowRight, Check, ChevronDown, ChevronRight, CircleHelp, Clipboard, Code2, Download, Layers3, LoaderCircle, Play, Plus, Radio, Search, Send, Server, Settings2, Square, Terminal, Trash2, X, Zap, Activity, BookOpen, RotateCcw, ShieldCheck } from 'lucide-react';
 import { commands, isActive, type Bootstrap, type Command, type Connection, type Option, type OutputEvent, type Session } from '../shared/model';
+import { adminTopicsEndpoint } from '../shared/topics';
+import TopicInput from './TopicInput';
+import { useTopicDiscovery } from './useTopicDiscovery';
 
-const initialConnection: Connection = { name: 'Local development', server: 'localhost:9007', username: '', password: '', proto: 'amps', type: 'json', secure: false };
+const initialConnection: Connection = { name: 'Local development', server: 'localhost:9007', username: '', password: '', proto: 'amps', type: 'json', secure: false, adminUrl: '' };
 function readConnection(): Connection {
   try { const saved = JSON.parse(localStorage.getItem('spark.connection') || 'null'); return saved?.server ? { ...initialConnection, ...saved, password: '' } : initialConnection; } catch { return initialConnection; }
 }
@@ -42,6 +45,7 @@ export default function App() {
   const streams = useRef(new Map<string, EventSource>());
   const pending = useRef(new Map<string, OutputEvent[]>());
   const token = bootstrap?.token;
+  const topicDiscovery = useTopicDiscovery(connection.server, connection.adminUrl || '', token, entered);
   const session = sessions.find(s => s.id === selected);
   const active = sessions.filter(s => isActive(s.state));
   const definition = commands[command];
@@ -130,7 +134,10 @@ export default function App() {
   function enter(event: FormEvent) {
     event.preventDefault(); setError('');
     if (!/^(?:[a-zA-Z0-9_.-]+|\[[0-9a-fA-F:]+\]):\d{1,5}$/.test(connection.server.trim())) { setError('Use hostname:port, for example localhost:9007.'); return; }
-    const next = { ...connection, server: connection.server.trim(), name: connection.name.trim() || connection.server.trim() };
+    if (connection.adminUrl?.trim()) {
+      try { adminTopicsEndpoint(connection.adminUrl); } catch (error) { setError((error as Error).message); return; }
+    }
+    const next = { ...connection, server: connection.server.trim(), name: connection.name.trim() || connection.server.trim(), adminUrl: connection.adminUrl?.trim() || '' };
     setConnection(next); setEntered(true);
     try { localStorage.setItem('spark.connection', JSON.stringify({ ...next, password: '' })); } catch { /* Storage is optional. */ }
   }
@@ -140,7 +147,7 @@ export default function App() {
     <header className="entry-header"><Logo /><span className="version-tag">LOCAL WORKSPACE <span>v0.1</span></span></header>
     <main className="entry-main">
       <section className="entry-story"><div className="eyebrow"><span className="dot" /> THE AMPS TESTING TOOLKIT</div><h1>A little clarity.<br />For every <em>message.</em></h1><p>Your familiar Spark commands. A focused workspace to sow, subscribe, and test what’s happening on your AMPS server.</p>
-        <div className="entry-note"><Terminal size={19} /><div><strong>Powered by the Spark CLI</strong><p>Every operation runs through your local Spark installation.</p></div></div>
+        <div className="entry-note"><Terminal size={19} /><div><strong>Powered by the Spark CLI</strong><p>Every command runs through your local Spark installation.</p></div></div>
       </section>
       <section className="connection-card"><div className="card-top"><span className="icon-tile"><Server size={23} /></span><span className="step-label">01 / SELECT YOUR SERVER</span></div><h2>Where are we working?</h2><p>Set the destination for your command workspace.</p>
         <form onSubmit={enter}>
@@ -148,9 +155,10 @@ export default function App() {
           <Field label="Server address"><div className="input-with-icon"><Server size={16} /><input required value={connection.server} onChange={e => updateConnection('server', e.target.value)} placeholder="localhost:9007" autoComplete="off" spellCheck={false} /></div></Field>
           <div className="field-row"><Field label="Message type"><input value={connection.type} onChange={e => updateConnection('type', e.target.value)} placeholder="json" /></Field><Field label="Protocol"><select value={connection.proto} onChange={e => updateConnection('proto', e.target.value)}>{['amps', 'fix', 'nvfix', 'xml'].map(p => <option key={p}>{p}</option>)}</select></Field></div>
           <details className="connection-advanced"><summary><Settings2 size={15} /> Authentication & security <ChevronDown size={15} /></summary><div className="field-row"><Field label="Username"><input value={connection.username} onChange={e => updateConnection('username', e.target.value)} autoComplete="username" /></Field><Field label="Password"><input type="password" value={connection.password} onChange={e => updateConnection('password', e.target.value)} autoComplete="current-password" /></Field></div><label className="checkbox"><input type="checkbox" checked={connection.secure} onChange={e => updateConnection('secure', e.target.checked)} /> Use a secure connection (TLS)</label><small className="muted">Passwords stay in memory and are never saved in browser storage.</small></details>
+          <details className="connection-advanced topic-discovery-settings" open={connection.adminUrl ? true : undefined}><summary><Radio size={15} /> Topic discovery <span className="optional-label">Optional</span><ChevronDown size={15} /></summary><Field label="Admin URL"><input type="url" value={connection.adminUrl || ''} onChange={e => updateConnection('adminUrl', e.target.value)} placeholder="http://localhost:8085" autoComplete="off" spellCheck={false} aria-describedby="admin-url-hint" /></Field><small className="muted" id="admin-url-hint">Use the admin base URL or the full /amps/instance/sow.json endpoint. Enable the HTTP admin port on your AMPS server first. This only loads topic-name suggestions; manual entry always works.</small></details>
           {(error || bootError) && <div className="error" role="alert">{error || bootError}</div>}
           <button className="button primary entry-submit" type="submit">Open workspace <ArrowRight size={17} /></button>
-          <p className="form-footnote"><ShieldCheck size={14} /> Selecting a server does not start a connection.</p>
+          <p className="form-footnote"><ShieldCheck size={14} /> {connection.adminUrl?.trim() ? 'Loads topic names only. Spark starts when you run a command.' : 'Selecting a server does not start a connection.'}</p>
         </form>
       </section>
     </main>
@@ -168,7 +176,7 @@ export default function App() {
         {(!bootstrap?.spark.ready || bootError) && <div className="setup-banner"><Terminal size={19} /><div><strong>{bootError ? 'Local backend unavailable' : 'Bring your Spark CLI'}</strong><p>{bootError || bootstrap?.spark.error || 'Checking your local installation…'}</p><code>SPARK_BIN=./tools/spark/bin/spark npm run dev</code></div></div>}
         {!online && <div className="error" role="status">Output connection lost. Reconnecting automatically; sessions stop after 30 seconds without a viewer.</div>}
         <section className="command-card"><div className="section-heading"><span><Settings2 size={16} /> Command configuration</span><code>spark {command}</code></div><form onSubmit={e => { e.preventDefault(); run(); }}>
-          <div className="command-fields">{definition.topic && <Field label="Topic" hint="Required"><input required value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. orders" spellCheck={false} /></Field>}
+          <div className="command-fields">{definition.topic && <TopicInput value={topic} onChange={setTopic} discovery={topicDiscovery} />}
             {hasFilter && <Field label="Filter" hint={command === 'sow_delete' ? 'Required' : 'Optional'}><input required={command === 'sow_delete'} value={filter} onChange={e => setFilter(e.target.value)} placeholder="e.g. /id = 1" spellCheck={false} /></Field>}
             {['sow', 'sow_and_subscribe'].includes(command) && <Field label="Result limit"><input type="number" min="0" max="100000" value={topn} onChange={e => setTopn(e.target.value)} /></Field>}
             {command === 'help' && <Field label="Command"><select value={helpCommand} onChange={e => setHelpCommand(e.target.value)}><option value="">All commands</option>{Object.keys(commands).filter(c => c !== 'help').map(c => <option key={c}>{c}</option>)}</select></Field>}

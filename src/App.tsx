@@ -139,9 +139,8 @@ export default function App() {
   if (!entered) return <div className="entry-page">
     <header className="entry-header"><Logo /><span className="version-tag">LOCAL WORKSPACE <span>v0.1</span></span></header>
     <main className="entry-main">
-      <section className="entry-story"><div className="eyebrow"><span className="dot" /> THE AMPS TOOLKIT, WITH A CLEARER VIEW</div><h1>A little clarity.<br />For every <em>message.</em></h1><p>Your familiar Spark commands. A focused workspace to query, listen, and test what’s happening on your server.</p>
-        <div className="workflow"><span><Search size={18} /> Inspect</span><i /><span><Radio size={18} /> Listen</span><i /><span><Send size={18} /> Test</span></div>
-        <div className="entry-note"><Terminal size={19} /><div><strong>Powered by the CLI you already use.</strong><p>Every operation runs through your local Spark installation.</p></div></div>
+      <section className="entry-story"><div className="eyebrow"><span className="dot" /> THE AMPS TESTING TOOLKIT</div><h1>A little clarity.<br />For every <em>message.</em></h1><p>Your familiar Spark commands. A focused workspace to sow, subscribe, and test what’s happening on your AMPS server.</p>
+        <div className="entry-note"><Terminal size={19} /><div><strong>Powered by the Spark CLI</strong><p>Every operation runs through your local Spark installation.</p></div></div>
       </section>
       <section className="connection-card"><div className="card-top"><span className="icon-tile"><Server size={23} /></span><span className="step-label">01 / SELECT YOUR SERVER</span></div><h2>Where are we working?</h2><p>Set the destination for your command workspace.</p>
         <form onSubmit={enter}>

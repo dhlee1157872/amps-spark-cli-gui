@@ -31,6 +31,8 @@ export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [removing, setRemoving] = useState<string[]>([]);
+  const [clearingSessions, setClearingSessions] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [command, setCommand] = useState<Command>('sow');
   const [topic, setTopic] = useState('');
@@ -57,6 +59,7 @@ export default function App() {
   const topicDiscovery = useTopicDiscovery(connection.server, connection.adminUrl || '', token, entered);
   const session = sessions.find(s => s.id === selected);
   const active = sessions.filter(s => isActive(s.state));
+  const finishedCount = sessions.length - active.length;
   const definition = commands[command];
   const hasFilter = ['sow', 'subscribe', 'sow_and_subscribe', 'sow_delete'].includes(command);
   const currentPublisher = session?.command === 'publish' && session.state === 'running';
@@ -77,8 +80,15 @@ export default function App() {
   }, []);
   const sessionIds = sessions.map(s => s.id).join(',');
   useEffect(() => {
+    setSelected(current => current && !sessions.some(s => s.id === current) ? sessions.at(-1)?.id ?? null : current);
+  }, [sessionIds]);
+  useEffect(() => {
     if (!token) return;
-    for (const id of sessionIds.split(',').filter(Boolean)) {
+    const ids = new Set(sessionIds.split(',').filter(Boolean));
+    for (const [id, stream] of streams.current) {
+      if (!ids.has(id)) { stream.close(); streams.current.delete(id); pending.current.delete(id); }
+    }
+    for (const id of ids) {
       if (streams.current.has(id)) continue;
       const source = new EventSource(`/api/sessions/${id}/events?token=${encodeURIComponent(token)}`);
       streams.current.set(id, source);
@@ -98,6 +108,7 @@ export default function App() {
         const status = JSON.parse(e.data);
         setSessions(items => items.map(s => s.id === id ? { ...s, ...status } : s));
       });
+      source.addEventListener('removed', () => forgetSessions([id]));
     }
   }, [token, sessionIds]);
   useEffect(() => {
@@ -115,8 +126,8 @@ export default function App() {
   useEffect(() => { if (follow && outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight; }, [session?.events.length, session?.totalEvents, selected, follow]);
   useEffect(() => { if (notice) { const timeout = setTimeout(() => setNotice(''), 3000); return () => clearTimeout(timeout); } }, [notice]);
 
-  async function api(url: string, body: unknown = {}) {
-    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Spark-Token': token || '' }, body: JSON.stringify(body) });
+  async function api(url: string, body: unknown = {}, method: 'POST' | 'DELETE' = 'POST') {
+    const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'X-Spark-Token': token || '' }, body: JSON.stringify(body) });
     const data = await response.json(); if (!response.ok) throw new Error(data.error || 'The operation failed.'); return data;
   }
   function choose(next: Command) { setCommand(next); setError(''); setOptions([]); setAdvanced(false); setSelected(null); setOutputMode('all'); }
@@ -130,6 +141,30 @@ export default function App() {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   async function stop(id: string) { try { await api(`/api/sessions/${id}/stop`); } catch (e) { setError((e as Error).message); } }
+  function forgetSessions(ids: string[]) {
+    const removed = new Set(ids);
+    for (const id of removed) { streams.current.get(id)?.close(); streams.current.delete(id); pending.current.delete(id); }
+    setSessions(items => items.filter(item => !removed.has(item.id)));
+    setCleared(items => Object.fromEntries(Object.entries(items).filter(([id]) => !removed.has(id))));
+  }
+  async function removeSession(id: string) {
+    if (removing.includes(id)) return;
+    setRemoving(ids => [...ids, id]); setError('');
+    try {
+      const result: { removed: string[] } = await api(`/api/sessions/${id}`, {}, 'DELETE');
+      forgetSessions(result.removed); setNotice('Session removed');
+    } catch (e) { setError((e as Error).message); }
+    finally { setRemoving(ids => ids.filter(item => item !== id)); }
+  }
+  async function clearFinishedSessions() {
+    setClearingSessions(true); setError('');
+    try {
+      const result: { removed: string[] } = await api('/api/sessions/clear-finished');
+      forgetSessions(result.removed);
+      setNotice(result.removed.length ? `${result.removed.length} finished session${result.removed.length === 1 ? '' : 's'} cleared` : 'No finished sessions to clear');
+    } catch (e) { setError((e as Error).message); }
+    finally { setClearingSessions(false); }
+  }
   async function send() {
     if (!session || sending) return;
     setSending(true); setError('');
@@ -195,8 +230,8 @@ export default function App() {
           <div className="command-actions"><span><span className="dot neutral" /> {active.length ? `${active.length} active session${active.length > 1 ? 's' : ''}` : 'Ready when you are'}</span><button className={`button ${command === 'sow_delete' ? 'danger' : 'primary'}`} disabled={busy || !bootstrap?.spark.ready || (definition.topic && !topic.trim()) || (command === 'sow_delete' && !filter.trim())}>{busy ? <LoaderCircle size={16} className="spin" /> : <Play size={14} fill="currentColor" />}{definition.action}</button></div>
         </form></section>
         {error && <div className="error dismissible" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button></div>}
-        <div className="results-heading"><div><h2>Session output</h2><span>{sessions.length ? `${sessions.length} session${sessions.length > 1 ? 's' : ''} this run` : 'Your results, in one place'}</span></div><span className="live-hint"><span className={`dot ${active.length ? '' : 'neutral'}`} /> {active.length ? 'Live updates' : 'Awaiting a command'}</span></div>
-        {sessions.length > 0 && <div className="session-tabs" role="tablist" aria-label="Sessions">{sessions.map((s, index) => <button role="tab" aria-selected={selected === s.id} key={s.id} className={selected === s.id ? 'active' : ''} onClick={() => { setSelected(s.id); setFollow(true); }}><span className={`session-dot ${s.state}`} />{commands[s.command].label}<span className="session-number">{String(index + 1).padStart(2, '0')}</span></button>)}</div>}
+        <div className="results-heading"><div><h2>Session output</h2><span>{sessions.length ? `${sessions.length} session${sessions.length > 1 ? 's' : ''} this run` : 'Your results, in one place'}</span></div><div className="session-list-actions"><span className="live-hint"><span className={`dot ${active.length ? '' : 'neutral'}`} /> {active.length ? 'Live updates' : 'Awaiting a command'}</span>{sessions.length > 0 && <button className="button subtle small" title="Remove completed, stopped, and failed sessions; keep running sessions" disabled={!finishedCount || clearingSessions} onClick={clearFinishedSessions}>{clearingSessions ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}Clear finished{finishedCount > 0 && <span className="count-pill">{finishedCount}</span>}</button>}</div></div>
+        {sessions.length > 0 && <div className="session-tabs" role="tablist" aria-label="Sessions">{sessions.map((s, index) => <div role="presentation" key={s.id} className={`session-tab-group ${selected === s.id ? 'active' : ''}`}><button role="tab" aria-selected={selected === s.id} onClick={() => { setSelected(s.id); setFollow(true); }}><span className={`session-dot ${s.state}`} />{commands[s.command].label}<span className="session-number">{String(index + 1).padStart(2, '0')}</span></button><button className="session-close" disabled={removing.includes(s.id) || clearingSessions} aria-label={`${isActive(s.state) ? 'Stop and remove' : 'Remove'} ${commands[s.command].label} session ${index + 1}`} title={isActive(s.state) ? 'Stop and remove session' : 'Remove session'} onClick={() => removeSession(s.id)}>{removing.includes(s.id) ? <LoaderCircle size={12} className="spin" /> : <X size={12} />}</button></div>)}</div>}
         {session?.command === 'publish' && <section className="composer"><div className="section-heading"><span><Code2 size={16} /> Message composer <code>{session.topic}</code></span><select aria-label="Message format" value={format} onChange={e => setFormat(e.target.value)}><option value="json">JSON</option><option value="text">Plain text</option></select></div><textarea aria-label="Message payload" value={message} onChange={e => setMessage(e.target.value)} spellCheck={false} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); if (currentPublisher) send(); } }} /><div className="composer-footer"><span>{currentPublisher ? 'Send multiple messages through this publisher.' : 'This publisher is no longer running.'}<kbd>Ctrl ↵</kbd></span><button className="button primary small" disabled={!currentPublisher || sending || !message.trim()} onClick={send}><Send size={14} />{sending ? 'Sending…' : 'Send message'}</button></div></section>}
         <section className="output-card"><div className="output-toolbar"><div className="output-filters">{(['all', 'stdout', 'stderr'] as const).map(mode => <button className={outputMode === mode ? 'selected' : ''} key={mode} onClick={() => setOutputMode(mode)}>{mode === 'all' ? 'All activity' : mode === 'stdout' ? 'Output' : 'Errors'}</button>)}</div><div className="output-tools"><button className={`icon-button ${follow ? 'on' : ''}`} aria-label={follow ? 'Disable auto-scroll' : 'Enable auto-scroll'} title="Auto-scroll" onClick={() => setFollow(v => !v)}><ArrowDown size={15} /></button><button className="icon-button" title="Copy output" aria-label="Copy output" disabled={!output.length} onClick={() => copy(outputText)}><Clipboard size={15} /></button><button className="icon-button" title="Download output" aria-label="Download output" disabled={!output.length} onClick={download}><Download size={15} /></button><button className="icon-button" title="Clear display" aria-label="Clear display" disabled={!session} onClick={() => session && setCleared(v => ({ ...v, [session.id]: session.totalEvents }))}><Trash2 size={15} /></button>{session && isActive(session.state) && <button className="button stop-button small" disabled={session.state === 'stopping'} onClick={() => stop(session.id)}><Square size={11} fill="currentColor" /> Stop</button>}</div></div>
           {session && <SessionOptions session={session} />}

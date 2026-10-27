@@ -41,6 +41,14 @@ app.post('/api/sessions', async (req, res) => {
   try { res.status(201).json(await sessions.create(req.body)); }
   catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
+app.post('/api/sessions/clear-finished', async (_req, res) => {
+  try { res.json({ removed: await sessions.clearFinished() }); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); }
+});
+app.delete('/api/sessions/:id', async (req, res) => {
+  try { await sessions.remove(req.params.id); res.json({ removed: [req.params.id] }); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); }
+});
 app.post('/api/sessions/:id/input', async (req, res) => {
   try { await sessions.send(req.params.id, req.body.message, req.body.format); res.json({ ok: true }); }
   catch (error) { res.status(400).json({ error: (error as Error).message }); }
@@ -63,10 +71,12 @@ app.get('/api/sessions/:id/events', (req, res) => {
   write('snapshot', runtime.session);
   const event = (data: unknown) => write('output', data);
   const status = (data: unknown) => write('status', data);
+  const removed = (data: unknown) => { write('removed', data); res.end(); };
   runtime.bus.on('event', event);
   runtime.bus.on('status', status);
+  runtime.bus.on('removed', removed);
   const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 10_000);
-  res.on('close', () => { clearInterval(heartbeat); runtime.bus.off('event', event); runtime.bus.off('status', status); detach(); });
+  res.on('close', () => { clearInterval(heartbeat); runtime.bus.off('event', event); runtime.bus.off('status', status); runtime.bus.off('removed', removed); detach(); });
 });
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Unknown API endpoint.' }));
 if (process.argv[1].endsWith('.ts')) {

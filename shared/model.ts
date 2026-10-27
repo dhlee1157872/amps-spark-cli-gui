@@ -4,7 +4,7 @@ export const commands = {
   publish: { label: 'Publish', eyebrow: 'MESSAGE COMPOSER', title: 'Put a message in motion.', description: 'Open a publisher, then send messages through the same session.', action: 'Start publisher', topic: true },
   sow_and_subscribe: { label: 'Query + subscribe', eyebrow: 'SNAPSHOT + LIVE', title: 'The full picture. Then the updates.', description: 'Read the current state and keep watching for changes.', action: 'Start session', topic: true },
   ping: { label: 'Ping', eyebrow: 'CONNECTION CHECK', title: 'Start with a quick check.', description: 'Run Spark ping against your selected server.', action: 'Run ping', topic: false },
-  latency: { label: 'Latency', eyebrow: 'DIAGNOSTICS', title: 'Get a feel for response time.', description: 'Run the Spark latency command. Check CLI help for required options.', action: 'Run latency', topic: false },
+  latency: { label: 'Latency', eyebrow: 'DIAGNOSTICS', title: 'Get a feel for response time.', description: 'Run the Spark latency command. Check CLI help for required options.', action: 'Run latency', topic: true },
   sow_delete: { label: 'SOW Delete', eyebrow: 'TOPIC MAINTENANCE', title: 'Make a precise change.', description: 'Delete matching records using an explicit topic and filter.', action: 'Delete matching records', topic: true },
   log_replay: { label: 'Log replay', eyebrow: 'DIAGNOSTICS', title: 'Replay with intention.', description: 'Run Spark log_replay with the options supported by your installation.', action: 'Start replay', topic: false },
   help: { label: 'CLI help', eyebrow: 'YOUR INSTALLED CLI', title: 'Straight from Spark.', description: 'Read the help output from your actual Spark installation.', action: 'Show help', topic: false },

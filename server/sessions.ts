@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { isActive, type OutputEvent, type RunRequest, type Session } from '../shared/model.js';
 import { buildCommand, root, sparkLocation } from './commands.js';
 
-interface Runtime { session: Session; process: ChildProcessWithoutNullStreams; bus: EventEmitter; secrets: string[]; viewers: number; grace?: NodeJS.Timeout; killTimer?: NodeJS.Timeout }
+interface Runtime { session: Session; process: ChildProcessWithoutNullStreams; bus: EventEmitter; secrets: string[]; viewers: number; grace?: NodeJS.Timeout; killTimer?: NodeJS.Timeout; removal?: Promise<boolean> }
 type Launcher = () => Promise<{ file: string; prefix?: string[] }>;
 export class Sessions {
   private items = new Map<string, Runtime>();
@@ -46,7 +46,7 @@ export class Sessions {
       if (this.items.size < 24) break;
       if (!isActive(runtime.session.state) && runtime.viewers === 0) this.items.delete(id);
     }
-    if (this.items.size >= 32) throw new Error('Session history is full. Restart the local backend to clear it.');
+    if (this.items.size >= 32) throw new Error('Session history is full. Clear finished sessions or remove a session before opening another.');
     const child = spawn(file, [...prefix, ...built.args], { cwd: root, shell: false, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: `${root}/tmp` } });
     const session: Session = { id: randomUUID(), command: request.command, topic: request.topic || '', server: request.connection?.server || '', preview: built.preview, options: built.options, state: 'starting', createdAt: new Date().toISOString(), events: [], totalEvents: 0 };
     const runtime: Runtime = { session, process: child, bus: new EventEmitter(), secrets: built.secrets, viewers: 0 };
@@ -96,6 +96,44 @@ export class Sessions {
     this.status(runtime);
     this.signal(runtime, 'SIGTERM');
     runtime.killTimer = setTimeout(() => { this.signal(runtime, 'SIGKILL'); runtime.killTimer = undefined; }, 1500).unref();
+  }
+  remove(id: string): Promise<boolean> {
+    const runtime = this.items.get(id);
+    if (!runtime) return Promise.resolve(false);
+    if (!runtime.removal) runtime.removal = this.removeRuntime(runtime).catch(error => {
+      runtime.removal = undefined;
+      throw error;
+    });
+    return runtime.removal;
+  }
+  private async removeRuntime(runtime: Runtime) {
+    if (!runtime.session.endedAt) {
+      await new Promise<void>((resolve, reject) => {
+        const done = () => { clearTimeout(timeout); resolve(); };
+        const timeout = setTimeout(() => {
+          runtime.process.off('close', done);
+          reject(new Error('Spark has not exited yet. The session is still visible; try removing it again.'));
+        }, 5000);
+        runtime.process.once('close', done);
+        this.stop(runtime.session.id);
+      });
+    }
+    clearTimeout(runtime.grace);
+    // Finish any pending descendant cleanup before forgetting this runtime.
+    if (runtime.killTimer) {
+      clearTimeout(runtime.killTimer);
+      this.signal(runtime, 'SIGKILL');
+      runtime.killTimer = undefined;
+    }
+    this.items.delete(runtime.session.id);
+    runtime.bus.emit('removed', { id: runtime.session.id });
+    runtime.bus.removeAllListeners();
+    return true;
+  }
+  async clearFinished(): Promise<string[]> {
+    const finished = this.list().filter(session => !isActive(session.state));
+    const removed = await Promise.all(finished.map(async session => await this.remove(session.id) ? session.id : null));
+    return removed.filter((id): id is string => id !== null);
   }
   shutdown() {
     for (const runtime of this.items.values()) {

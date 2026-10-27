@@ -112,6 +112,11 @@ commands continue to use the CLI; the admin call only supplies topic names.
   display, not the full session history.
 - Auto-scroll can be disabled while inspecting output. Clear affects only the
   display. Stop affects the actual process.
+- Use the **×** on a session tab to remove it from backend history as well as the
+  page. Removing a running session stops Spark and waits for process cleanup
+  first. **Clear finished** removes completed, stopped, and failed sessions while
+  keeping active sessions. Removed sessions stay removed after refresh; other
+  open viewers of those sessions are notified and their streams close.
 - Refresh restores session history and running processes while the backend stays
   alive. Passwords must be entered again before starting new authenticated work.
 - Changing the selected server requires stopping active sessions first.

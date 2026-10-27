@@ -34,3 +34,12 @@
 /plugins/.remote-plugin-install-staging/
 /plugins/cache/
 /skills/.system/
+
+# Spark Workbench build artifacts and local installation
+/node_modules/
+/dist/
+/dist-server/
+/tools/spark/
+/.env
+/.env.local
+/spark.local.json

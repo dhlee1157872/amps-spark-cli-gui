@@ -48,6 +48,11 @@ allows up to six active processes. `PORT=4311 npm run dev` changes the port.
 
 ## Workflow
 
+Use the **Theme** picker at the top of either screen to choose **Moss** (the
+original green), **Midnight** (blue and near-black), or **Graphite** (charcoal and
+silver). Changes apply immediately and are remembered in this browser. Switching
+themes does not interrupt running sessions.
+
 1. Enter the server as `hostname:port`, message type, and protocol. Optional
    username/password and TLS controls are under Authentication & security.
 2. Optionally configure Topic discovery with an AMPS admin URL. Open the workspace;

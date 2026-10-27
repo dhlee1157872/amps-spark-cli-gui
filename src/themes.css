@@ -1,0 +1,73 @@
+/* Moss uses the original colors retained as fallbacks in styles.css.
+   Alternative palettes share semantic roles across the entire interface. */
+:root { color-scheme: dark; }
+:root[data-theme="midnight"] {
+  --theme-canvas: #090d14;
+  --theme-panel: #101722;
+  --theme-surface-raised: #172235;
+  --theme-border: #26364c;
+  --theme-border-strong: #3e5573;
+  --theme-text-subtle: #7288a7;
+  --theme-text-muted: #94a6c0;
+  --theme-text-secondary: #becde1;
+  --theme-text-primary: #e9eff8;
+  --theme-accent: #88b9ff;
+  --theme-accent-hover: #aed0ff;
+}
+:root[data-theme="graphite"] {
+  --theme-canvas: #101112;
+  --theme-panel: #191b1e;
+  --theme-surface-raised: #24272b;
+  --theme-border: #35393f;
+  --theme-border-strong: #51565e;
+  --theme-text-subtle: #858b95;
+  --theme-text-muted: #a1a7b1;
+  --theme-text-secondary: #c7cbd2;
+  --theme-text-primary: #f0f1f3;
+  --theme-accent: #d4d9e2;
+  --theme-accent-hover: #eef1f6;
+}
+
+.theme-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+}
+.theme-picker select {
+  width: auto;
+  min-width: 85px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--theme-text-secondary, #bec8b4);
+  font-size: 11px;
+  cursor: pointer;
+}
+.theme-picker select option { background: var(--surface); color: var(--theme-text-primary, #e8ebe5); }
+.theme-swatch { width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; }
+.theme-swatch[data-palette="moss"] { background: #c7f284; }
+.theme-swatch[data-palette="midnight"] { background: #88b9ff; }
+.theme-swatch[data-palette="graphite"] { background: #d4d9e2; }
+.entry-header-actions { display: flex; align-items: center; gap: 22px; }
+
+@media(max-width:1100px) { .topbar .theme-picker-label { display: none; } }
+@media(max-width:800px) {
+  .topbar { height: auto; min-height: 61px; padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap; }
+  .topbar-right { gap: 10px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+  .topbar .server-tag { overflow-wrap: anywhere; }
+  .entry-header-actions { gap: 12px; }
+  .entry-header-actions .version-tag { display: none; }
+}
+@media(max-width:500px) {
+  .theme-picker-label, .topbar .theme-picker>svg { display: none; }
+  .theme-picker { gap: 5px; padding: 5px; }
+  .theme-picker select { font-size: 10px; min-width: 75px; }
+}

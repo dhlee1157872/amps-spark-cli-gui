@@ -4,6 +4,8 @@ import { commands, isActive, type Bootstrap, type Command, type Connection, type
 import { adminTopicsEndpoint } from '../shared/topics';
 import TopicInput from './TopicInput';
 import { useTopicDiscovery } from './useTopicDiscovery';
+import ThemePicker from './ThemePicker';
+import { applyTheme, readTheme, type Theme } from './theme';
 
 const initialConnection: Connection = { name: 'Local development', server: 'localhost:9007', username: '', password: '', proto: 'amps', type: 'json', secure: false, adminUrl: '' };
 function readConnection(): Connection {
@@ -17,6 +19,12 @@ function Logo() { return <div className="brand"><span className="brand-mark"><Za
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <label className="field"><span>{label}{hint && <small>{hint}</small>}</span>{children}</label>; }
 
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  function changeTheme(next: Theme) {
+    setTheme(next);
+    applyTheme(next);
+    try { localStorage.setItem('spark.theme', next); } catch { /* Persistence is optional. */ }
+  }
   const [connection, setConnection] = useState<Connection>(readConnection);
   const [entered, setEntered] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -144,7 +152,7 @@ export default function App() {
   const updateConnection = (key: keyof Connection, value: string | boolean) => setConnection(c => ({ ...c, [key]: value }));
 
   if (!entered) return <div className="entry-page">
-    <header className="entry-header"><Logo /><span className="version-tag">LOCAL WORKSPACE <span>v0.1</span></span></header>
+    <header className="entry-header"><Logo /><div className="entry-header-actions"><ThemePicker value={theme} onChange={changeTheme} /><span className="version-tag">LOCAL WORKSPACE <span>v0.1</span></span></div></header>
     <main className="entry-main">
       <section className="entry-story"><div className="eyebrow"><span className="dot" /> THE AMPS TESTING TOOLKIT</div><h1>A little clarity.<br />For every <em>message.</em></h1><p>Your familiar Spark commands. A focused workspace to sow, subscribe, and test what’s happening on your AMPS server.</p>
         <div className="entry-note"><Terminal size={19} /><div><strong>Powered by the Spark CLI</strong><p>Every command runs through your local Spark installation.</p></div></div>
@@ -171,7 +179,7 @@ export default function App() {
         <div className="workspace-label utilities-label">UTILITIES</div>{(['ping', 'latency', 'log_replay', 'sow_delete', 'help'] as Command[]).map(key => { const Icon = icons[key]; return <button key={key} onClick={() => choose(key)} className={`nav-item ${command === key ? 'selected' : ''}`}><Icon size={17} /><span>{commands[key].label}</span></button>; })}</nav>
       <div className="sidebar-bottom"><div className="local-indicator"><span className={`dot ${online ? '' : 'neutral'}`} /><span>{online ? 'Local workspace' : 'Reconnecting'}</span><span className="version">v0.1</span></div><p>Small commands.<br />A clearer picture.</p></div>
     </aside>
-    <div className="workspace"><header className="topbar"><div className="breadcrumbs">Workspace <ChevronRight size={14} /><span>{definition.label}</span></div><div className="topbar-right"><span className="protocol-tag">{connection.secure ? 'TLS' : 'TCP'} <span>/</span> {connection.type || connection.proto}</span><span className="server-tag"><Server size={14} />{connection.server}</span></div></header>
+    <div className="workspace"><header className="topbar"><div className="breadcrumbs">Workspace <ChevronRight size={14} /><span>{definition.label}</span></div><div className="topbar-right"><ThemePicker value={theme} onChange={changeTheme} /><span className="protocol-tag">{connection.secure ? 'TLS' : 'TCP'} <span>/</span> {connection.type || connection.proto}</span><span className="server-tag"><Server size={14} />{connection.server}</span></div></header>
       <main className="work-main"><div className="page-heading"><div><div className="eyebrow">{definition.eyebrow}</div><h1>{definition.title}</h1><p>{definition.description}</p></div><button className="button subtle help-button" disabled={busy || !bootstrap?.spark.ready} onClick={() => run(false, 'help')}><CircleHelp size={16} /> CLI reference</button></div>
         {(!bootstrap?.spark.ready || bootError) && <div className="setup-banner"><Terminal size={19} /><div><strong>{bootError ? 'Local backend unavailable' : 'Bring your Spark CLI'}</strong><p>{bootError || bootstrap?.spark.error || 'Checking your local installation…'}</p><code>SPARK_BIN=./tools/spark/bin/spark npm run dev</code></div></div>}
         {!online && <div className="error" role="status">Output connection lost. Reconnecting automatically; sessions stop after 30 seconds without a viewer.</div>}

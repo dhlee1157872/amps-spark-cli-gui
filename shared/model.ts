@@ -15,6 +15,7 @@ export interface Option { flag: string; value: string }
 export interface RunRequest { command: Command; connection: Connection; topic: string; filter: string; topn: string; options: Option[]; helpCommand: string; confirmDelete?: boolean }
 export type State = 'starting' | 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 export interface OutputEvent { id: number; time: string; kind: 'stdout' | 'stderr' | 'system' | 'sent'; text: string }
-export interface Session { id: string; command: Command; topic: string; server: string; preview: string; state: State; createdAt: string; endedAt?: string; exitCode?: number | null; events: OutputEvent[]; totalEvents: number }
+export interface SessionOption { flag: string; value: string | null }
+export interface Session { id: string; command: Command; topic: string; server: string; preview: string; options: SessionOption[]; state: State; createdAt: string; endedAt?: string; exitCode?: number | null; events: OutputEvent[]; totalEvents: number }
 export interface Bootstrap { token: string; spark: { ready: boolean; path: string; error?: string }; sessions: Session[] }
 export const isActive = (state: State) => ['starting', 'running', 'stopping'].includes(state);

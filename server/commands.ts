@@ -1,7 +1,7 @@
 import { access, readFile, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
-import { commands, type RunRequest } from '../shared/model.js';
+import { commands, type RunRequest, type SessionOption } from '../shared/model.js';
 
 export const root = process.cwd();
 export async function workspacePath(input: string) {
@@ -45,15 +45,29 @@ const checkString = (value: unknown, label: string, max = 4096): string => {
   return value;
 };
 const quote = (value: string) => /^[a-zA-Z0-9_./:@=-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
+function redactOption(option: SessionOption, password: string): SessionOption {
+  if (option.value === null) return { ...option };
+  if (/password|passphrase|secret|token|credential|api_?key/i.test(option.flag)) return { ...option, value: '***' };
+  let value = option.value.replace(/([^\s:/@]+):([^@\s]+)@/g, '$1:***@');
+  value = value.replace(/((?:password|passphrase|secret|token|api_?key)=)[^&;,\s]+/gi, '$1***');
+  if (password) value = value.replaceAll(password, '***');
+  return { ...option, value };
+}
 export async function buildCommand(input: RunRequest) {
   if (!input || !Object.hasOwn(commands, input.command)) throw new Error('Choose a supported Spark command.');
   const args: string[] = [input.command];
+  const options: SessionOption[] = [];
+  function addOption(flag: string, value?: string) {
+    args.push(`-${flag}`);
+    if (value) args.push(value);
+    options.push({ flag, value: value || null });
+  }
   if (input.command === 'help') {
     if (input.helpCommand) {
       if (!Object.hasOwn(commands, input.helpCommand)) throw new Error('Unknown help command.');
       args.push(input.helpCommand);
     }
-    return { args, preview: ['spark', ...args].map(quote).join(' '), secrets: [] as string[] };
+    return { args, preview: ['spark', ...args].map(quote).join(' '), options: input.helpCommand ? [{ flag: 'Help target', value: input.helpCommand }] : [], secrets: [] as string[] };
   }
   const c = input.connection;
   if (!c || typeof c.secure !== 'boolean') throw new Error('Select a server first.');
@@ -63,20 +77,20 @@ export async function buildCommand(input: RunRequest) {
   const password = checkString(c.password, 'password', 1024);
   if ((user && !password) || (!user && password)) throw new Error('Provide both username and password, or leave both blank. Interactive password prompts are not supported.');
   if (/[\r\n:@]/.test(user) || /[\r\n@]/.test(password)) throw new Error('Credentials contain characters unsupported by this prototype.');
-  args.push('-server', user ? `${user}:${password}@${server}` : server);
+  addOption('server', user ? `${user}:${password}@${server}` : server);
   if (!['amps', 'fix', 'nvfix', 'xml'].includes(c.proto)) throw new Error('Unsupported protocol.');
-  args.push('-proto', c.proto);
-  if (c.type) args.push('-type', checkString(c.type, 'message type', 64));
-  if (c.secure) args.push('-secure', 'true');
+  addOption('proto', c.proto);
+  if (c.type) addOption('type', checkString(c.type, 'message type', 64));
+  if (c.secure) addOption('secure', 'true');
   if (commands[input.command].topic) {
     const topic = checkString(input.topic, 'topic', 512).trim();
     if (!topic || topic.startsWith('-')) throw new Error('Enter a topic name.');
-    args.push('-topic', topic);
+    addOption('topic', topic);
   }
-  if (input.filter) args.push('-filter', checkString(input.filter, 'filter'));
+  if (input.filter) addOption('filter', checkString(input.filter, 'filter'));
   if (['sow', 'sow_and_subscribe'].includes(input.command) && input.topn) {
     if (!/^\d+$/.test(input.topn) || Number(input.topn) > 100000) throw new Error('Result limit must be between 0 and 100000.');
-    args.push('-topn', input.topn);
+    addOption('topn', input.topn);
   }
   if (input.command === 'sow_delete' && (!input.filter?.trim() || input.confirmDelete !== true)) throw new Error('Deletion requires a filter and explicit confirmation.');
   if (!Array.isArray(input.options) || input.options.length > 20) throw new Error('Use at most 20 additional options.');
@@ -90,9 +104,9 @@ export async function buildCommand(input: RunRequest) {
       value = await workspacePath(value);
     }
     used.add(flag);
-    args.push(`-${flag}`);
-    if (value) args.push(value);
+    addOption(flag, value);
   }
-  const preview = args.map((arg, i) => i > 0 && args[i - 1] === '-server' && user ? `${user}:***@${server}` : arg);
-  return { args, preview: ['spark', ...preview].map(quote).join(' '), secrets: password ? [password] : [] };
+  const safeOptions = options.map(option => redactOption(option, password));
+  const preview = [input.command, ...safeOptions.flatMap(option => option.value === null ? [`-${option.flag}`] : [`-${option.flag}`, option.value])];
+  return { args, preview: ['spark', ...preview].map(quote).join(' '), options: safeOptions, secrets: password ? [password] : [] };
 }

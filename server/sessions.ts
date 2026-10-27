@@ -48,7 +48,7 @@ export class Sessions {
     }
     if (this.items.size >= 32) throw new Error('Session history is full. Restart the local backend to clear it.');
     const child = spawn(file, [...prefix, ...built.args], { cwd: root, shell: false, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: `${root}/tmp` } });
-    const session: Session = { id: randomUUID(), command: request.command, topic: request.topic || '', server: request.connection?.server || '', preview: built.preview, state: 'starting', createdAt: new Date().toISOString(), events: [], totalEvents: 0 };
+    const session: Session = { id: randomUUID(), command: request.command, topic: request.topic || '', server: request.connection?.server || '', preview: built.preview, options: built.options, state: 'starting', createdAt: new Date().toISOString(), events: [], totalEvents: 0 };
     const runtime: Runtime = { session, process: child, bus: new EventEmitter(), secrets: built.secrets, viewers: 0 };
     this.items.set(session.id, runtime);
     this.emit(runtime, 'system', 'Starting Spark. Process state does not indicate server connectivity.');

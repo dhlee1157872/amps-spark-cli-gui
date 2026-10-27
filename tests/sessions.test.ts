@@ -18,6 +18,36 @@ test('arguments preserve filters literally and redact credentials from previews'
   assert.equal(result.args[result.args.indexOf('-filter') + 1], filter);
   assert.ok(result.args.includes('tester:private-value@localhost:9007'));
   assert.ok(!result.preview.includes('private-value'));
+  assert.equal(result.options.find(option => option.flag === 'server')?.value, 'tester:***@localhost:9007');
+  assert.equal(result.options.find(option => option.flag === 'filter')?.value, filter);
+});
+test('session options capture exact values and valueless flags without exposing credentials', async () => {
+  const result = await buildCommand({ ...request, connection: { ...request.connection, secure: true, username: 'tester', password: 'private-value', adminUrl: 'http://localhost:8085' }, options: [{ flag: 'stats', value: '' }, { flag: 'bookmark', value: '-42' }, { flag: 'copy', value: 'other:copy-secret@localhost:9008' }, { flag: 'token', value: 'token-secret' }] });
+  assert.equal(result.options.find(option => option.flag === 'secure')?.value, 'true');
+  assert.equal(result.options.find(option => option.flag === 'topn')?.value, '10');
+  assert.equal(result.options.find(option => option.flag === 'stats')?.value, null);
+  assert.equal(result.options.find(option => option.flag === 'bookmark')?.value, '-42');
+  assert.ok(result.args.includes('other:copy-secret@localhost:9008'));
+  assert.ok(result.args.includes('token-secret'));
+  const display = JSON.stringify({ options: result.options, preview: result.preview });
+  for (const secret of ['private-value', 'copy-secret', 'token-secret', '8085']) assert.ok(!display.includes(secret));
+});
+test('help options describe only the help target, with no unused connection settings', async () => {
+  const help = await buildCommand({ ...request, command: 'help', helpCommand: 'subscribe' });
+  assert.deepEqual(help.options, [{ flag: 'Help target', value: 'subscribe' }]);
+  assert.deepEqual((await buildCommand({ ...request, command: 'help' })).options, []);
+});
+test('session options remain the original launch snapshot in history and status updates', async t => {
+  const sessions = manager(); t.after(() => sessions.shutdown());
+  const input = { ...request, connection: { ...request.connection }, options: [{ flag: 'orderby', value: '/id DESC' }] };
+  const session = await sessions.create(input);
+  input.topic = 'edited-topic'; input.connection.server = 'changed:9999'; input.options[0].value = '/other ASC';
+  await until(() => !isActive(session.state));
+  const history = sessions.list().find(item => item.id === session.id)!;
+  assert.equal(history.options.find(option => option.flag === 'topic')?.value, 'orders');
+  assert.equal(history.options.find(option => option.flag === 'server')?.value, 'localhost:9007');
+  assert.equal(history.options.find(option => option.flag === 'orderby')?.value, '/id DESC');
+  assert.deepEqual(sessions.summary(sessions.get(session.id)!).options, history.options);
 });
 test('rejects connection overrides, unconfirmed deletions and invalid destinations', async () => {
   await assert.rejects(buildCommand({ ...request, options: [{ flag: 'server', value: 'other:9007' }] }), /duplicate option/);

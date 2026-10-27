@@ -97,6 +97,13 @@ commands continue to use the CLI; the admin call only supplies topic names.
 
 ## Output and lifecycle
 
+- Expand **Session options** inside the output panel to inspect the selected
+  session's launch settings, including app-supplied defaults and advanced flags.
+  The backend captures these when launching Spark, so later form edits do not
+  change them. Credentials are redacted before options reach the browser; the
+  command preview uses the same redacted values. Options not explicitly passed
+  remain under the installed CLI's defaults. Sessions from an older backend show
+  their command preview instead until you restart and launch new sessions.
 - Running means the process is running, not that the server accepted a connection.
 - Sent means written to stdin, not acknowledged by AMPS.
 - Raw stdout and stderr are preserved as stream chunks, not parsed into message

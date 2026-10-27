@@ -41,8 +41,8 @@ app.post('/api/sessions', async (req, res) => {
   try { res.status(201).json(await sessions.create(req.body)); }
   catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
-app.post('/api/sessions/clear-finished', async (_req, res) => {
-  try { res.json({ removed: await sessions.clearFinished() }); }
+app.post('/api/sessions/clear-finished', async (req, res) => {
+  try { res.json({ removed: await sessions.clearFinished(req.body?.workspaceId) }); }
   catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
 app.delete('/api/sessions/:id', async (req, res) => {
@@ -54,6 +54,19 @@ app.post('/api/sessions/:id/input', async (req, res) => {
   catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
 app.post('/api/sessions/:id/stop', (req, res) => { sessions.stop(req.params.id); res.json({ ok: true }); });
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  const detach = sessions.watch(update => {
+    if (res.destroyed) return;
+    if (res.writableLength > 1_000_000) { res.destroy(); return; }
+    res.write(`data: ${JSON.stringify(update)}\n\n`);
+  });
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 10_000);
+  res.on('close', () => { clearInterval(heartbeat); detach(); });
+});
 app.get('/api/sessions/:id/events', (req, res) => {
   const runtime = sessions.get(req.params.id);
   if (!runtime) return res.status(404).json({ error: 'Session not found.' });

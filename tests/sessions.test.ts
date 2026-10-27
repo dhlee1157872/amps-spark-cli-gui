@@ -167,3 +167,59 @@ test('removal cleans up stubborn process groups before forgetting them', { skip:
   assert.equal(runtime.killTimer, undefined);
   assert.equal(sessions.list().length, 0);
 });
+
+test('workspace cleanup stays isolated even when two workspaces use the same server', async t => {
+  const sessions = manager(); t.after(() => sessions.shutdown());
+  const first = await sessions.create({ ...request, workspaceId: 'workspace-a', connection: { ...request.connection, name: 'First workspace' } });
+  const second = await sessions.create({ ...request, workspaceId: 'workspace-b' });
+  const publisher = await sessions.create({ ...request, workspaceId: 'workspace-a', command: 'publish' });
+  const detach = sessions.attach(publisher.id); t.after(detach);
+  await until(() => Boolean(first.endedAt && second.endedAt) && publisher.state === 'running');
+  assert.equal(first.workspaceId, 'workspace-a');
+  assert.equal(first.workspaceName, 'First workspace');
+  assert.equal(sessions.summary(sessions.get(second.id)!).workspaceId, 'workspace-b');
+  assert.deepEqual(await sessions.clearFinished('workspace-a'), [first.id]);
+  assert.deepEqual(sessions.list().map(session => session.id), [second.id, publisher.id]);
+  await sessions.send(publisher.id, '{"id":3}', 'json');
+  await until(() => publisher.events.some(event => event.text.includes('received:{"id":3}')));
+  assert.deepEqual(await sessions.clearFinished('missing-workspace'), []);
+  await assert.rejects(sessions.clearFinished(null as unknown as string), /Invalid workspace/);
+  await assert.rejects(sessions.create({ ...request, workspaceId: '../invalid' }), /Invalid workspace/);
+});
+
+test('a shared watcher keeps six sessions in different workspaces alive and releases them on disconnect', async t => {
+  const sessions = manager(100); t.after(() => sessions.shutdown());
+  const existing = await sessions.create({ ...request, workspaceId: 'workspace-0', command: 'subscribe' });
+  const updates: import('../shared/model.js').SessionUpdate[] = [];
+  const detach = sessions.watch(update => updates.push(structuredClone(update))); t.after(detach);
+  assert.equal(updates[0].type, 'snapshot');
+  if (updates[0].type === 'snapshot') assert.equal(updates[0].sessions[0].id, existing.id);
+  for (let index = 1; index < 6; index++) await sessions.create({ ...request, workspaceId: `workspace-${index}`, command: 'subscribe' });
+  await until(() => sessions.list().every(session => session.events.filter(event => event.kind === 'stdout').length >= 3));
+  assert.equal(sessions.list().length, 6);
+  assert.ok(sessions.list().every(session => session.state === 'running' && sessions.get(session.id)!.viewers === 1));
+  assert.equal(updates.filter(update => update.type === 'session').length, 5);
+  assert.equal(new Set(updates.filter(update => update.type === 'output').map(update => update.sessionId)).size, 6);
+  await assert.rejects(sessions.create({ ...request, workspaceId: 'workspace-7', command: 'subscribe' }), /across all workspaces/);
+  detach();
+  await until(() => sessions.list().every(session => session.state === 'stopped'));
+});
+
+test('removing one watched workspace preserves another publisher and reconnect snapshots are current', async t => {
+  const sessions = manager(100); t.after(() => sessions.shutdown());
+  const removed: string[] = [];
+  const detach = sessions.watch(update => { if (update.type === 'removed') removed.push(update.id); }); t.after(detach);
+  const first = await sessions.create({ ...request, workspaceId: 'workspace-a', command: 'subscribe' });
+  const second = await sessions.create({ ...request, workspaceId: 'workspace-b', command: 'publish' });
+  await until(() => first.events.some(event => event.kind === 'stdout') && second.state === 'running');
+  await sessions.remove(first.id);
+  assert.deepEqual(removed, [first.id]);
+  assert.equal(second.state, 'running');
+  detach();
+  let snapshot: string[] = [];
+  const reconnect = sessions.watch(update => { if (update.type === 'snapshot') snapshot = update.sessions.map(session => session.id); }); t.after(reconnect);
+  assert.deepEqual(snapshot, [second.id]);
+  await sessions.send(second.id, '{"still":"running"}', 'json');
+  await until(() => second.events.some(event => event.text.includes('received:{"still":"running"}')));
+  assert.equal(sessions.get(second.id)!.viewers, 1);
+});

@@ -44,7 +44,8 @@ SPARK_BIN=./path/inside/workspace/bin/spark npm run dev
 The GUI does not download or copy Spark.
 Java must be available to Spark through your normal environment. Inspect your
 distribution's heap requirements before running multiple sessions; the GUI
-allows up to six active processes. `PORT=4311 npm run dev` changes the port.
+allows up to six active processes across all workspaces.
+`PORT=4311 npm run dev` changes the port.
 
 ## Workflow
 
@@ -66,6 +67,25 @@ themes does not interrupt running sessions.
    publisher's stdin each time; JSON is validated and compacted to a single line.
 6. Stop ends the process group, including Java children. A closed browser has a
    30-second reconnect grace period before unattended sessions are stopped.
+
+Use **New workspace** in the top bar to open another server connection (or a
+separate workspace for the same server). Switch tabs to move between workspaces;
+running subscriptions and publishers continue receiving output in the background.
+Each workspace keeps its own command fields, advanced options, message draft,
+topic discovery, selected session, and output controls while the page stays open.
+The tab shows its server and active-session count.
+
+Opened workspace profiles and the selected tab are remembered across refreshes.
+Session history is recovered from the running backend; command/message drafts
+are kept in memory only. All workspaces share one live output connection and the
+six-process limit. **Clear finished** affects only the current workspace. The
+**×** on a workspace tab asks for confirmation, then stops and removes that
+workspace’s sessions and removes its saved profile. Other workspaces stay open.
+
+Use **Workspace settings** (the settings icon in the header or the server card)
+to update credentials or topic discovery, including after a refresh. Stop that
+workspace’s active sessions before changing its server, protocol, message type,
+or TLS setting. Other workspaces can continue running.
 
 Connection settings are remembered in browser storage; passwords are kept only
 in memory. Authenticated commands currently require both username and password;
@@ -114,12 +134,13 @@ commands continue to use the CLI; the admin call only supplies topic names.
   display. Stop affects the actual process.
 - Use the **×** on a session tab to remove it from backend history as well as the
   page. Removing a running session stops Spark and waits for process cleanup
-  first. **Clear finished** removes completed, stopped, and failed sessions while
-  keeping active sessions. Removed sessions stay removed after refresh; other
-  open viewers of those sessions are notified and their streams close.
+  first. **Clear finished** removes completed, stopped, and failed sessions from
+  the current workspace while keeping its active sessions. Removed sessions stay
+  removed after refresh; other open viewers are notified of the removal.
 - Refresh restores session history and running processes while the backend stays
   alive. Passwords must be entered again before starting new authenticated work.
-- Changing the selected server requires stopping active sessions first.
+- Switching workspaces keeps sessions running; changing a workspace’s server
+  requires stopping only its own active sessions first.
 - Deletion requires an explicit filter and a confirmation. Replay/latency flags
   depend on your Spark version; consult CLI reference. File inputs must exist
   inside the workspace. Direct SOW file output is not supported in v1.
@@ -136,7 +157,8 @@ npm start
 
 `npm start` serves the production UI and API at the same local URL. `npm test`
 uses an explicitly separate subprocess fixture to verify persistent stdin,
-streaming, exit errors, cancellation, argument boundaries, and disconnect cleanup.
+streaming, exit errors, cancellation, argument boundaries, workspace isolation,
+profile restoration, shared output streams, and disconnect cleanup.
 These tests do not claim live AMPS compatibility; verify with your Spark version
 and a test server before using write operations.
 

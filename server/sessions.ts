@@ -1,13 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { isActive, type OutputEvent, type RunRequest, type Session } from '../shared/model.js';
+import { isActive, type OutputEvent, type RunRequest, type Session, type SessionUpdate } from '../shared/model.js';
 import { buildCommand, root, sparkLocation } from './commands.js';
 
 interface Runtime { session: Session; process: ChildProcessWithoutNullStreams; bus: EventEmitter; secrets: string[]; viewers: number; grace?: NodeJS.Timeout; killTimer?: NodeJS.Timeout; removal?: Promise<boolean> }
 type Launcher = () => Promise<{ file: string; prefix?: string[] }>;
 export class Sessions {
   private items = new Map<string, Runtime>();
+  private changes = new EventEmitter();
   constructor(private launch: Launcher = async () => {
     const spark = await sparkLocation();
     if (!spark.ready) throw new Error(spark.error);
@@ -15,6 +16,20 @@ export class Sessions {
   }, private graceMs = 30_000) {}
   list() { return [...this.items.values()].map(r => r.session); }
   get(id: string) { return this.items.get(id); }
+  // One browser stream watches every workspace, including sessions started later.
+  watch(listener: (update: SessionUpdate) => void) {
+    const detach = new Map<string, () => void>();
+    const watchSession = (session: Session) => detach.set(session.id, this.attach(session.id));
+    const update = (event: SessionUpdate) => {
+      if (event.type === 'session') watchSession(event.session);
+      if (event.type === 'removed') { detach.get(event.id)?.(); detach.delete(event.id); }
+      listener(event);
+    };
+    for (const session of this.list()) watchSession(session);
+    this.changes.on('update', update);
+    listener({ type: 'snapshot', sessions: this.list() });
+    return () => { this.changes.off('update', update); for (const release of detach.values()) release(); detach.clear(); };
+  }
   private emit(runtime: Runtime, kind: OutputEvent['kind'], text: string) {
     for (const secret of runtime.secrets) text = text.replaceAll(secret, '***');
     // Bound both individual entries and retained history; the UI labels these as output entries.
@@ -23,9 +38,13 @@ export class Sessions {
       runtime.session.events.push(event);
       if (runtime.session.events.length > 500) runtime.session.events.shift();
       runtime.bus.emit('event', event);
+      this.changes.emit('update', { type: 'output', sessionId: runtime.session.id, event } satisfies SessionUpdate);
     }
   }
-  private status(runtime: Runtime) { runtime.bus.emit('status', this.summary(runtime)); }
+  private status(runtime: Runtime) {
+    runtime.bus.emit('status', this.summary(runtime));
+    this.changes.emit('update', { type: 'status', session: this.summary(runtime) } satisfies SessionUpdate);
+  }
   summary(runtime: Runtime) { const { events, ...rest } = runtime.session; return rest; }
   private armGrace(runtime: Runtime) {
     clearTimeout(runtime.grace);
@@ -39,18 +58,20 @@ export class Sessions {
     return () => { runtime.viewers = Math.max(0, runtime.viewers - 1); this.armGrace(runtime); };
   }
   async create(request: RunRequest) {
+    if (request?.workspaceId !== undefined && (typeof request.workspaceId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(request.workspaceId))) throw new Error('Invalid workspace ID.');
     const built = await buildCommand(request);
     const { file, prefix = [] } = await this.launch();
-    if (this.list().filter(s => isActive(s.state)).length >= 6) throw new Error('Stop a session before opening another (maximum 6 active sessions).');
+    if (this.list().filter(s => isActive(s.state)).length >= 6) throw new Error('Stop a session before opening another (maximum 6 active sessions across all workspaces).');
     for (const [id, runtime] of this.items) {
       if (this.items.size < 24) break;
       if (!isActive(runtime.session.state) && runtime.viewers === 0) this.items.delete(id);
     }
     if (this.items.size >= 32) throw new Error('Session history is full. Clear finished sessions or remove a session before opening another.');
     const child = spawn(file, [...prefix, ...built.args], { cwd: root, shell: false, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: `${root}/tmp` } });
-    const session: Session = { id: randomUUID(), command: request.command, topic: request.topic || '', server: request.connection?.server || '', preview: built.preview, options: built.options, state: 'starting', createdAt: new Date().toISOString(), events: [], totalEvents: 0 };
+    const session: Session = { id: randomUUID(), workspaceId: request.workspaceId, workspaceName: typeof request.connection?.name === 'string' ? request.connection.name.slice(0, 200) : '', command: request.command, topic: request.topic || '', server: request.connection?.server || '', preview: built.preview, options: built.options, state: 'starting', createdAt: new Date().toISOString(), events: [], totalEvents: 0 };
     const runtime: Runtime = { session, process: child, bus: new EventEmitter(), secrets: built.secrets, viewers: 0 };
     this.items.set(session.id, runtime);
+    this.changes.emit('update', { type: 'session', session } satisfies SessionUpdate);
     this.emit(runtime, 'system', 'Starting Spark. Process state does not indicate server connectivity.');
     child.once('spawn', () => { if (session.state === 'starting') session.state = 'running'; this.status(runtime); });
     child.stdout.setEncoding('utf8');
@@ -127,11 +148,13 @@ export class Sessions {
     }
     this.items.delete(runtime.session.id);
     runtime.bus.emit('removed', { id: runtime.session.id });
+    this.changes.emit('update', { type: 'removed', id: runtime.session.id } satisfies SessionUpdate);
     runtime.bus.removeAllListeners();
     return true;
   }
-  async clearFinished(): Promise<string[]> {
-    const finished = this.list().filter(session => !isActive(session.state));
+  async clearFinished(workspaceId?: string): Promise<string[]> {
+    if (workspaceId !== undefined && (typeof workspaceId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(workspaceId))) throw new Error('Invalid workspace ID.');
+    const finished = this.list().filter(session => !isActive(session.state) && (workspaceId === undefined || session.workspaceId === workspaceId));
     const removed = await Promise.all(finished.map(async session => await this.remove(session.id) ? session.id : null));
     return removed.filter((id): id is string => id !== null);
   }
